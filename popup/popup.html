@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Data Analyzer</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <header class="popup-header">
+            <div class="logo">
+                <span class="icon">📊</span>
+                <h1>YouTube分析器</h1>
+            </div>
+        </header>
+
+        <main class="popup-main">
+            <div class="quick-actions">
+                <button id="analyzeVideo" class="action-btn primary">
+                    <span class="btn-icon">🎥</span>
+                    分析当前视频
+                </button>
+                <button id="viewTrends" class="action-btn secondary">
+                    <span class="btn-icon">🔥</span>
+                    查看热门趋势
+                </button>
+            </div>
+
+            <div id="dataContainer" class="data-container">
+                <div class="welcome-message">
+                    <p>欢迎使用YouTube数据分析器！</p>
+                    <p>在YouTube页面点击分析按钮开始使用</p>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <div id="statusIndicator" class="status-indicator">
+                    <span class="status-dot ready"></span>
+                    <span class="status-text">准备就绪</span>
+                </div>
+            </div>
+        </main>
+
+        <footer class="popup-footer">
+            <button id="openSettings" class="settings-btn">
+                <span class="btn-icon">⚙️</span>
+                设置
+            </button>
+            <div class="version">v1.0.0</div>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
