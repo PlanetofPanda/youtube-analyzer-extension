@@ -1,16 +1,30 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Data Analyzer",
-  "version": "1.0.0",
-  "description": "分析YouTube频道和视频数据，发现爆款内容趋势",
+  "name": "YouTube Analyzer",
+  "version": "1.0",
+  "description": "YouTube数据分析与爆款视频抓取Chrome插件",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options/options.html",
   "permissions": [
     "storage",
     "activeTab",
     "identity",
-    "https://www.googleapis.com/*",
-    "https://www.youtube.com/*"
+    "downloads"
   ],
   "host_permissions": [
+    "https://www.googleapis.com/*",
     "https://www.youtube.com/*"
   ],
   "background": {
@@ -23,18 +37,9 @@
       "run_at": "document_idle"
     }
   ],
-  "action": {
-    "default_popup": "popup/popup.html",
-    "default_icon": {
-      "16": "assets/icons/icon16.png",
-      "48": "assets/icons/icon48.png",
-      "128": "assets/icons/icon128.png"
-    }
-  },
-  "options_page": "options/options.html",
   "web_accessible_resources": [
     {
-      "resources": ["assets/*"],
+      "resources": ["popup/popup.html", "popup/popup.css", "popup/analysis_panel.html", "popup/analysis_panel.css"],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

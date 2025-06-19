@@ -1,203 +1,414 @@
-class YouTubeContentScript {
-  constructor() {
-    this.init();
-  }
+// content/content.js
 
-  init() {
-    // 等待页面加载完成
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        this.setupPageAnalysis();
-      });
-    } else {
-      this.setupPageAnalysis();
+console.log("YouTube Analyzer Content Script: Version 5.8 Loaded! (Ultimate Context Invalidation Defense)"); // Update version info
+
+/**
+ * ContentScriptManager class is responsible for injecting UI elements onto YouTube pages,
+ * observing DOM changes, and communicating with the background script to fetch data.
+ */
+class ContentScriptManager {
+    constructor() {
+        this.analysisIframe = null; // Reference to the iframe element
+        this.observer = null; // Reference to the MutationObserver
+
+        // Bind the message handler once for adding/removing the listener
+        this.handleIframeMessageBound = this.handleIframeMessage.bind(this);
+        
+        // Add the message listener
+        try {
+            window.addEventListener('message', this.handleIframeMessageBound);
+            console.log("Content Script: Message listener added in constructor.");
+        } catch (e) {
+            console.error("Content Script: Failed to add message listener (context issue at constructor?):", e);
+        }
+
+        this.init(); // Initialize the manager
     }
 
-    // 监听URL变化（YouTube是单页应用）
-    let lastUrl = location.href;
-    new MutationObserver(() => {
-      const url = location.href;
-      if (url !== lastUrl) {
-        lastUrl = url;
-        setTimeout(() => this.setupPageAnalysis(), 1000);
-      }
-    }).observe(document, { subtree: true, childList: true });
-  }
-
-  setupPageAnalysis() {
-    if (this.isVideoPage()) {
-      this.addVideoAnalysisButton();
-    } else if (this.isChannelPage()) {
-      this.addChannelAnalysisButton();
-    }
-  }
-
-  isVideoPage() {
-    return location.pathname === '/watch';
-  }
-
-  isChannelPage() {
-    return location.pathname.includes('/channel/') || 
-           location.pathname.includes('/c/') || 
-           location.pathname.includes('/@');
-  }
-
-  addVideoAnalysisButton() {
-    // 检查是否已经添加了按钮
-    if (document.getElementById('yt-analyzer-btn')) return;
-
-    // 查找视频操作按钮区域
-    const actionsContainer = document.querySelector('#actions-inner');
-    if (!actionsContainer) return;
-
-    // 创建分析按钮
-    const analyzeBtn = document.createElement('button');
-    analyzeBtn.id = 'yt-analyzer-btn';
-    analyzeBtn.className = 'yt-analyzer-button';
-    analyzeBtn.innerHTML = '📊 数据分析';
-    analyzeBtn.style.cssText = `
-      background: #0066cc;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 8px 16px;
-      margin-left: 8px;
-      cursor: pointer;
-      font-size: 14px;
-    `;
-
-    analyzeBtn.addEventListener('click', () => {
-      this.showVideoAnalysis();
-    });
-
-    actionsContainer.appendChild(analyzeBtn);
-  }
-
-  addChannelAnalysisButton() {
-    // 类似的逻辑，为频道页面添加分析按钮
-    if (document.getElementById('yt-channel-analyzer-btn')) return;
-
-    const headerContainer = document.querySelector('#channel-header-container');
-    if (!headerContainer) return;
-
-    const analyzeBtn = document.createElement('button');
-    analyzeBtn.id = 'yt-channel-analyzer-btn';
-    analyzeBtn.className = 'yt-analyzer-button';
-    analyzeBtn.innerHTML = '📈 频道分析';
-    analyzeBtn.style.cssText = `
-      background: #ff4444;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 8px 16px;
-      margin: 8px;
-      cursor: pointer;
-      font-size: 14px;
-    `;
-
-    analyzeBtn.addEventListener('click', () => {
-      this.showChannelAnalysis();
-    });
-
-    headerContainer.appendChild(analyzeBtn);
-  }
-
-  async showVideoAnalysis() {
-    const videoId = new URLSearchParams(location.search).get('v');
-    if (!videoId) return;
-
-    // 创建分析面板
-    this.createAnalysisPanel('正在分析视频数据...');
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'getVideoData',
-        videoId: videoId
-      });
-
-      if (response.success) {
-        this.updateAnalysisPanel(this.formatVideoAnalysis(response.data));
-      } else {
-        this.updateAnalysisPanel(`<div class="error">分析失败: ${response.error}</div>`);
-      }
-    } catch (error) {
-      this.updateAnalysisPanel(`<div class="error">分析失败: ${error.message}</div>`);
-    }
-  }
-
-  createAnalysisPanel(content) {
-    // 移除已存在的面板
-    const existingPanel = document.getElementById('yt-analysis-panel');
-    if (existingPanel) {
-      existingPanel.remove();
+    /**
+     * Initialization function: Sets up URL change observer, iframe injection, and button injection.
+     */
+    init() {
+        console.log("Content Script: Initializing...");
+        try {
+            this.injectAnalysisIframe(); // Inject the iframe
+            this.observeUrlChanges();    // Observe DOM changes to detect URL changes (for YouTube SPA)
+            this.addButtonsToPage();     // Attempt to inject buttons on the current page load
+        } catch (e) {
+            console.error("Content Script: Error during init():", e);
+        }
     }
 
-    const panel = document.createElement('div');
-    panel.id = 'yt-analysis-panel';
-    panel.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      width: 300px;
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 9999;
-      font-family: Arial, sans-serif;
-    `;
+    /**
+     * Handles messages from the iframe, e.g., panel close requests.
+     * @param {MessageEvent} event - Message event object
+     */
+    handleIframeMessage(event) {
+        // !!! ULTIMATE DEFENSE AGAINST "Extension context invalidated" !!!
+        // This check must be the very first thing. If 'chrome' is undefined or its runtime is gone,
+        // it means the extension context for this content script is dead.
+        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+            console.warn("Content Script: Context invalidated during message handling. Removing listener.");
+            // Remove the listener immediately to prevent further errors from this dead context
+            window.removeEventListener('message', this.handleIframeMessageBound);
+            return; // Exit function early
+        }
 
-    panel.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0; color: #333;">视频分析</h3>
-        <button onclick="this.parentElement.parentElement.remove()" style="border: none; background: none; font-size: 18px; cursor: pointer;">×</button>
-      </div>
-      <div id="analysis-content">${content}</div>
-    `;
+        let expectedOrigin;
+        try {
+            expectedOrigin = chrome.runtime.getURL(''); 
+        } catch (e) {
+            // This catch is for cases where chrome.runtime.getURL itself throws the invalidation error.
+            console.warn("Content Script: Failed to get extension URL (context issue). Removing listener. Error:", e);
+            window.removeEventListener('message', this.handleIframeMessageBound);
+            return;
+        }
 
-    document.body.appendChild(panel);
-  }
+        // Ensure this.analysisIframe exists and its contentWindow property is accessible
+        if (!this.analysisIframe || !this.analysisIframe.contentWindow) {
+            console.warn("Content Script: Ignoring message: Analysis iframe not ready or accessible.");
+            return;
+        }
+        
+        // Strict check for message source: must come from our iframe and origin must match
+        if (event.source !== this.analysisIframe.contentWindow || !event.origin.startsWith(expectedOrigin)) {
+            // If the message is not from our iframe or origin doesn't match, ignore it
+            return;
+        }
 
-  updateAnalysisPanel(content) {
-    const contentDiv = document.getElementById('analysis-content');
-    if (contentDiv) {
-      contentDiv.innerHTML = content;
+        const { type, data, message } = event.data;
+        console.log("Content Script: Received message from our iframe:", type, data || message);
+
+        if (type === 'CLOSE_PANEL') {
+            console.log("Content Script: Received CLOSE_PANEL message from iframe.");
+            this.hideAnalysisIframe();
+        }
     }
-  }
 
-  formatVideoAnalysis(data) {
-    return `
-      <div class="video-analysis">
-        <h4 style="margin: 0 0 8px 0; color: #333;">${data.title}</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-          <div style="text-align: center; padding: 8px; background: #f5f5f5; border-radius: 4px;">
-            <div style="font-weight: bold; color: #666;">观看次数</div>
-            <div style="font-size: 14px; color: #333;">${this.formatNumber(data.viewCount)}</div>
-          </div>
-          <div style="text-align: center; padding: 8px; background: #f5f5f5; border-radius: 4px;">
-            <div style="font-weight: bold; color: #666;">点赞数</div>
-            <div style="font-size: 14px; color: #333;">${this.formatNumber(data.likeCount)}</div>
-          </div>
-        </div>
-        <div style="font-size: 12px; color: #666;">
-          发布时间: ${new Date(data.publishedAt).toLocaleDateString()}
-        </div>
-      </div>
-    `;
-  }
 
-  formatNumber(num) {
-    if (!num) return '0';
-    const number = parseInt(num);
-    if (number >= 1000000) {
-      return (number / 1000000).toFixed(1) + 'M';
-    } else if (number >= 1000) {
-      return (number / 1000).toFixed(1) + 'K';
+    /**
+     * Creates and injects the analysis panel iframe.
+     */
+    injectAnalysisIframe() {
+        // Check context validity BEFORE accessing chrome.runtime for iframe.src
+        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+            console.error("Content Script: Cannot inject iframe: Extension context is invalid at injection time.");
+            return;
+        }
+
+        if (document.getElementById('youtube-analyzer-iframe')) {
+            this.analysisIframe = document.getElementById('youtube-analyzer-iframe');
+            this.hideAnalysisIframe(); // Ensure initial state is hidden
+            console.log("Content Script: Reusing existing analysis iframe.");
+            return;
+        }
+
+        const iframe = document.createElement('iframe');
+        iframe.id = 'youtube-analyzer-iframe';
+        try {
+            iframe.src = chrome.runtime.getURL('popup/analysis_panel.html'); 
+        } catch (e) {
+            console.error("Content Script: Failed to set iframe src. Extension context may be invalid.", e);
+            return; // If src cannot be set, stop injection
+        }
+        iframe.frameBorder = '0';
+        iframe.allow = 'clipboard-write; clipboard-read;';
+
+        iframe.style.cssText = `
+            display: block !important;
+            position: fixed !important;
+            top: 10px !important;
+            right: 10px !important;
+            width: 350px !important;
+            min-height: 50px !important;
+            max-height: calc(100vh - 20px) !important;
+            height: auto !important;
+            overflow: auto !important;
+            background-color: rgba(255, 255, 255, 0.98) !important;
+            border: 1px solid #065fd4 !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.25) !important;
+            z-index: 2147483647 !important;
+            transition: all 0.3s ease-in-out !important;
+            opacity: 0 !important;
+            transform: translateX(100%) !important;
+        `;
+
+        document.body.appendChild(iframe);
+        this.analysisIframe = iframe; // Assign immediately after appendChild
+
+        iframe.onload = () => {
+            console.log("Content Script: Analysis iframe loaded.");
+        };
+
+        console.log("Content Script: Analysis iframe injected into page.");
     }
-    return number.toLocaleString();
-  }
+
+    /**
+     * Shows the analysis iframe.
+     */
+    showAnalysisIframe() {
+        if (this.analysisIframe) {
+            this.analysisIframe.style.opacity = '1';
+            this.analysisIframe.style.transform = 'translateX(0%)';
+            console.log("Content Script: Analysis iframe shown.");
+        }
+    }
+
+    /**
+     * Hides the analysis iframe.
+     */
+    hideAnalysisIframe() {
+        if (this.analysisIframe) {
+            this.analysisIframe.style.opacity = '0';
+            this.analysisIframe.style.transform = 'translateX(100%)';
+            console.log("Content Script: Analysis iframe hidden.");
+        }
+    }
+
+    /**
+     * Uses MutationObserver to watch for body DOM changes to detect URL changes.
+     */
+    observeUrlChanges() {
+        let lastUrl = location.href;
+        // Disconnect existing observer if any before creating a new one
+        if (this.observer) {
+            this.observer.disconnect();
+            console.log("Content Script: Existing MutationObserver disconnected.");
+        }
+        
+        const observer = new MutationObserver(() => {
+            const url = location.href;
+            if (url !== lastUrl) {
+                lastUrl = url;
+                console.log("Content Script: URL changed to:", url);
+                this.hideAnalysisIframe();
+                this.addButtonsToPage(); 
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+        this.observer = observer; // Store observer reference
+    }
+
+    /**
+     * Determines which analysis buttons to add based on the current URL.
+     */
+    addButtonsToPage() {
+        if (window.location.pathname.startsWith('/watch')) {
+            this.addVideoAnalysisButton();
+        } else if (window.location.pathname.startsWith('/channel/') || window.location.pathname.startsWith('/user/')) {
+            this.addChannelAnalysisButton();
+        }
+    }
+
+    /**
+     * Gets the video ID from the URL.
+     */
+    getVideoIdFromUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('v');
+    }
+
+    /**
+     * Gets the channel ID from the URL.
+     */
+    getChannelIdFromUrl() {
+        const path = window.location.pathname;
+        let channelId = null;
+        if (path.startsWith('/channel/')) {
+            channelId = path.split('/')[2];
+        } else if (path.startsWith('/user/')) {
+            channelId = path.split('/')[2];
+            console.warn("Content Script: '/user/' URLs provide username, not direct channel ID. API might require conversion.");
+        }
+        return channelId;
+    }
+
+    /**
+     * Injects an "Analyze Video" button onto the video page.
+     */
+    addVideoAnalysisButton() {
+        let targetElement = document.querySelector('ytd-watch-metadata #above-the-fold #top-row');
+        if (!targetElement) {
+            targetElement = document.querySelector('#actions-inner #segmented-like-button');
+            if (targetElement) targetElement = targetElement.parentElement;
+        }
+        if (!targetElement) {
+            targetElement = document.querySelector('#actions #top-level-buttons-computed');
+        }
+
+        if (!targetElement || document.getElementById('youtube-analyzer-video-button')) {
+            return;
+        }
+
+        const button = document.createElement('button');
+        button.id = 'youtube-analyzer-video-button';
+        button.textContent = '分析视频';
+        button.style.cssText = `
+            background-color: #065fd4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            transition: background-color 0.3s ease;
+            white-space: nowrap;
+        `;
+        button.onmouseover = () => button.style.backgroundColor = '#044cbd';
+        button.onmouseout = () => button.style.backgroundColor = '#065fd4';
+
+        if (targetElement.firstChild) {
+            targetElement.insertBefore(button, targetElement.firstChild);
+        } else {
+            targetElement.appendChild(button);
+        }
+        
+        button.onclick = () => this.analyzeVideoAndSendToIframe(button);
+        console.log("Content Script: 'Analyze Video' button added.");
+    }
+
+    /**
+     * Injects an "Analyze Channel" button onto the channel page.
+     */
+    addChannelAnalysisButton() {
+        let targetElement = document.querySelector('ytd-c4-tabbed-header-renderer #buttons #buttons-inner');
+        
+        if (!targetElement) {
+            targetElement = document.querySelector('ytd-channel-about-metadata-renderer #right-column #subscribe-button');
+             if (targetElement) targetElement = targetElement.parentElement;
+        }
+
+        if (!targetElement || document.getElementById('youtube-analyzer-channel-button')) {
+            return;
+        }
+
+        const button = document.createElement('button');
+        button.id = 'youtube-analyzer-channel-button';
+        button.textContent = '分析频道';
+        button.style.cssText = `
+            background-color: #065fd4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            transition: background-color 0.3s ease;
+            white-space: nowrap;
+        `;
+        button.onmouseover = () => button.style.backgroundColor = '#044cbd';
+        button.onmouseout = () => button.style.backgroundColor = '#065fd4';
+
+        targetElement.appendChild(button);
+        
+        button.onclick = () => this.analyzeChannelAndSendToIframe(button);
+        console.log("Content Script: 'Analyze Channel' button added.");
+    }
+
+    /**
+     * Analyzes a video and sends its data to the iframe.
+     * @param {HTMLElement} button - The button that triggered the analysis
+     */
+    async analyzeVideoAndSendToIframe(button) {
+        const videoId = this.getVideoIdFromUrl();
+        if (!videoId) {
+            this.sendDataToIframe({ type: 'ERROR', message: "无法获取视频ID。" });
+            this.showAnalysisIframe();
+            return;
+        }
+
+        button.textContent = '分析中...';
+        button.disabled = true;
+        this.sendDataToIframe({ type: 'LOADING', message: "正在获取视频数据..." });
+        this.showAnalysisIframe();
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: 'GET_VIDEO_DATA',
+                videoId: videoId
+            });
+
+            if (response.success) {
+                this.sendDataToIframe({ type: 'VIDEO_DATA', data: response.data });
+            } else {
+                this.sendDataToIframe({ type: 'ERROR', message: `获取视频数据失败: ${response.error}` });
+            }
+        } catch (error) {
+            this.sendDataToIframe({ type: 'ERROR', message: `通信错误: ${error.message}` });
+        } finally {
+            button.textContent = '分析视频';
+            button.disabled = false;
+        }
+    }
+
+    /**
+     * Analyzes a channel and sends its data to the iframe.
+     * @param {HTMLElement} button - The button that triggered the analysis
+     */
+    async analyzeChannelAndSendToIframe(button) {
+        const channelId = this.getChannelIdFromUrl();
+        if (!channelId) {
+            this.sendDataToIframe({ type: 'ERROR', message: "无法获取频道ID。" });
+            this.showAnalysisIframe();
+            return;
+        }
+
+        button.textContent = '分析中...';
+        button.disabled = true;
+        this.sendDataToIframe({ type: 'LOADING', message: "正在获取频道数据..." });
+        this.showAnalysisIframe();
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: 'GET_CHANNEL_DATA',
+                channelId: channelId
+            });
+
+            if (response.success) {
+                this.sendDataToIframe({ type: 'CHANNEL_DATA', data: response.data });
+            } else {
+                this.sendDataToIframe({ type: 'ERROR', message: `获取频道数据失败: ${response.error}` });
+            }
+        } catch (error) {
+            this.sendDataToIframe({ type: 'ERROR', message: `通信错误: ${error.message}` });
+        } finally {
+            button.textContent = '分析频道';
+            button.disabled = false;
+        }
+    }
+
+    /**
+     * Sends data to the iframe via postMessage.
+     * @param {object} data - The data object to send
+     */
+    sendDataToIframe(data) {
+        // !!! ULTIMATE DEFENSE AGAINST "Extension context invalidated" !!!
+        // Wrap the entire function body in a try-catch as the ultimate safeguard.
+        try {
+            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id || !this.analysisIframe || !this.analysisIframe.contentWindow) {
+                console.warn("Content Script: Cannot send data. Extension or iframe context is invalid.");
+                return;
+            }
+            const iframeOrigin = chrome.runtime.getURL('');
+            this.analysisIframe.contentWindow.postMessage(data, iframeOrigin);
+            console.log("Content Script: Data sent to iframe:", data);
+        } catch (e) {
+            console.error("Content Script: Error sending data to iframe (likely context invalidation):", e);
+        }
+    }
 }
 
-// 初始化内容脚本
-new YouTubeContentScript();
+// Instantiate ContentScriptManager to start listening and injecting
+new ContentScriptManager();

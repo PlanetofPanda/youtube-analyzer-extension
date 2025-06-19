@@ -3,51 +3,75 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Data Analyzer</title>
+    <title>YouTube Analyzer</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="popup-container">
-        <header class="popup-header">
-            <div class="logo">
-                <span class="icon">📊</span>
-                <h1>YouTube分析器</h1>
-            </div>
+    <div class="container">
+        <header>
+            <h1>YouTube Analyzer</h1>
         </header>
 
-        <main class="popup-main">
-            <div class="quick-actions">
-                <button id="analyzeVideo" class="action-btn primary">
-                    <span class="btn-icon">🎥</span>
-                    分析当前视频
-                </button>
-                <button id="viewTrends" class="action-btn secondary">
-                    <span class="btn-icon">🔥</span>
-                    查看热门趋势
-                </button>
-            </div>
-
-            <div id="dataContainer" class="data-container">
-                <div class="welcome-message">
-                    <p>欢迎使用YouTube数据分析器！</p>
-                    <p>在YouTube页面点击分析按钮开始使用</p>
+        <main>
+            <!-- 视频分析部分 -->
+            <section class="card">
+                <h2>当前视频分析</h2>
+                <div class="flex-row">
+                    <button id="analyzeCurrentVideoButton" class="btn btn-primary">分析当前视频</button>
+                    <span id="currentVideoStatus" class="status-message"></span>
                 </div>
-            </div>
-
-            <div class="status-bar">
-                <div id="statusIndicator" class="status-indicator">
-                    <span class="status-dot ready"></span>
-                    <span class="status-text">准备就绪</span>
+                <div id="currentVideoData" class="data-display">
+                    <!-- 视频数据将在这里显示 -->
+                    <p class="placeholder">点击“分析当前视频”获取数据。</p>
                 </div>
-            </div>
+            </section>
+
+            <!-- 趋势视频部分 -->
+            <section class="card">
+                <h2>趋势视频</h2>
+                <div class="flex-row category-select-container">
+                    <select id="regionSelect" class="form-select">
+                        <option value="US">美国</option>
+                        <option value="GB">英国</option>
+                        <option value="JP">日本</option>
+                        <option value="KR">韩国</option>
+                        <option value="IN">印度</option>
+                        <option value="CN">中国 (部分地区)</option>
+                        <option value="DE">德国</option>
+                        <option value="FR">法国</option>
+                        <option value="CA">加拿大</option>
+                        <!-- 可以添加更多地区 -->
+                    </select>
+                    <select id="categorySelect" class="form-select">
+                        <option value="">所有类别</option>
+                        <option value="1">电影和动画</option>
+                        <option value="2">汽车和交通</option>
+                        <option value="10">音乐</option>
+                        <option value="15">宠物与动物</option>
+                        <option value="17">体育</option>
+                        <option value="19">旅游与活动</option>
+                        <option value="20">游戏</option>
+                        <option value="22">博客和人物</option>
+                        <option value="23">喜剧</option>
+                        <option value="24">娱乐</option>
+                        <option value="25">新闻与政治</option>
+                        <option value="26">操作方法和风格</option>
+                        <option value="27">教育</option>
+                        <option value="28">科学与技术</option>
+                        <option value="29">非营利组织与行动</option>
+                        <!-- 更多类别ID请参考YouTube Data API文档 -->
+                    </select>
+                    <button id="loadTrendingVideosButton" class="btn btn-secondary">加载趋势</button>
+                </div>
+                <div id="trendingVideosList" class="data-list">
+                    <!-- 趋势视频列表将在这里显示 -->
+                    <p class="placeholder">选择地区和类别，然后点击“加载趋势”获取数据。</p>
+                </div>
+            </section>
         </main>
 
-        <footer class="popup-footer">
-            <button id="openSettings" class="settings-btn">
-                <span class="btn-icon">⚙️</span>
-                设置
-            </button>
-            <div class="version">v1.0.0</div>
+        <footer>
+            <button id="openOptionsButton" class="btn btn-link">设置</button>
         </footer>
     </div>
 

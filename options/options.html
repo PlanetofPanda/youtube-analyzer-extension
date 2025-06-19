@@ -3,116 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Data Analyzer - 设置</title>
+    <title>YouTube Analyzer Options</title>
     <link rel="stylesheet" href="options.css">
 </head>
 <body>
     <div class="container">
-        <div class="card">
-            <header class="header">
-                <h1>📊 YouTube Data Analyzer 设置</h1>
-                <p>配置你的API密钥和个性化设置</p>
-            </header>
+        <header>
+            <h1>YouTube Analyzer 设置</h1>
+        </header>
 
-            <main class="main-content">
-                <!-- API 配置区域 -->
-                <section class="section">
-                    <h2>🔑 API 配置</h2>
-                    <div class="form-group">
-                        <label for="apiKey">YouTube Data API 密钥</label>
-                        <div class="input-group">
-                            <input type="password" id="apiKey" placeholder="输入你的 YouTube Data API 密钥">
-                            <button type="button" id="toggleApiKey" class="toggle-btn">👁️</button>
-                        </div>
-                        <small class="help-text">
-                            需要API密钥才能访问YouTube数据。
-                            <a href="https://developers.google.com/youtube/v3/getting-started" target="_blank">获取API密钥</a>
-                        </small>
+        <main>
+            <section class="card api-settings">
+                <h2>API 密钥设置</h2>
+                <div class="form-group">
+                    <label for="youtubeApiKey">YouTube Data API 密钥:</label>
+                    <div class="api-key-input-group">
+                        <input type="password" id="youtubeApiKey" class="form-input" placeholder="输入您的API密钥">
+                        <button type="button" id="toggleApiKeyVisibility" class="btn btn-icon">
+                            <!-- Eye icon for show/hide password -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
                     </div>
-                    <button id="testConnection" class="btn btn-secondary">测试连接</button>
-                </section>
-
-                <!-- 数据收集设置 -->
-                <section class="section">
-                    <h2>📊 数据收集设置</h2>
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="autoAnalyze" checked>
-                            <span class="checkmark"></span>
-                            自动分析打开的视频
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="collectComments">
-                            <span class="checkmark"></span>
-                            收集评论数据（可能影响性能）
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label for="cacheTime">数据缓存时间（分钟）</label>
-                        <input type="number" id="cacheTime" value="5" min="1" max="60">
-                    </div>
-                </section>
-
-                <!-- 显示设置 -->
-                <section class="section">
-                    <h2>🎨 显示设置</h2>
-                    <div class="form-group">
-                        <label for="theme">主题</label>
-                        <select id="theme">
-                            <option value="auto">自动</option>
-                            <option value="light">浅色</option>
-                            <option value="dark">深色</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="language">语言</label>
-                        <select id="language">
-                            <option value="zh-CN">简体中文</option>
-                            <option value="en-US">English</option>
-                        </select>
-                    </div>
-                </section>
-
-                <!-- 导出设置 -->
-                <section class="section">
-                    <h2>📥 数据导出</h2>
-                    <div class="export-options">
-                        <button id="exportData" class="btn btn-primary">导出所有数据</button>
-                        <button id="clearCache" class="btn btn-danger">清除缓存</button>
-                    </div>
-                </section>
-
-                <!-- 关于信息 -->
-                <section class="section">
-                    <h2>ℹ️ 关于</h2>
-                    <div class="about-info">
-                        <p><strong>版本:</strong> 1.0.0</p>
-                        <p><strong>作者:</strong> YouTube Analytics Team</p>
-                        <p><strong>描述:</strong> 专业的YouTube数据分析工具，帮助内容创作者分析视频表现和发现热门趋势。</p>
-                        <div class="links">
-                            <a href="#" class="link">使用教程</a>
-                            <a href="#" class="link">反馈问题</a>
-                            <a href="#" class="link">更新日志</a>
-                        </div>
-                    </div>
-                </section>
-            </main>
-
-            <footer class="footer">
-                <div class="status-indicator">
-                    <span id="statusDot" class="status-dot"></span>
-                    <span id="statusText" class="status-text">未配置</span>
+                    <button id="testConnectionButton" class="btn btn-primary">测试连接</button>
+                    <span id="apiKeyStatus" class="status-message"></span>
                 </div>
-                <div class="action-buttons">
-                    <button id="resetSettings" class="btn btn-outline">重置设置</button>
-                    <button id="saveSettings" class="btn btn-primary">保存设置</button>
+            </section>
+
+            <section class="card data-collection-settings">
+                <h2>数据收集设置</h2>
+                <div class="form-group toggle-group">
+                    <label for="autoAnalyze">自动分析视频:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="autoAnalyze">
+                        <span class="slider round"></span>
+                    </label>
+                    <p class="description">在访问YouTube视频页面时自动加载分析数据。</p>
                 </div>
-            </footer>
-        </div>
+                <div class="form-group toggle-group">
+                    <label for="collectComments">收集评论:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="collectComments">
+                        <span class="slider round"></span>
+                    </label>
+                    <p class="description">允许扩展收集视频评论进行分析（可能会消耗更多API配额）。</p>
+                </div>
+                <div class="form-group">
+                    <label for="cacheTime">数据缓存时间 (小时):</label>
+                    <input type="number" id="cacheTime" class="form-input" min="0" value="1">
+                    <p class="description">API响应的缓存时间，设置为0表示不缓存。</p>
+                </div>
+                <button id="clearCacheButton" class="btn btn-secondary">清除缓存</button>
+            </section>
+
+            <section class="card display-settings">
+                <h2>显示设置</h2>
+                <div class="form-group">
+                    <label for="themeSelect">主题:</label>
+                    <select id="themeSelect" class="form-select">
+                        <option value="light">浅色</option>
+                        <option value="dark">深色</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="languageSelect">语言:</label>
+                    <select id="languageSelect" class="form-select">
+                        <option value="zh-CN">简体中文</option>
+                        <option value="en">English</option>
+                        <!-- 可以添加更多语言 -->
+                    </select>
+                </div>
+            </section>
+
+            <section class="card data-management-settings">
+                <h2>数据管理</h2>
+                <button id="exportDataButton" class="btn btn-secondary">导出数据</button>
+                <p class="description">导出所有分析过的数据到本地文件。</p>
+                <button id="resetSettingsButton" class="btn btn-danger">重置所有设置</button>
+                <p class="description warning">这将清除所有API密钥、设置和缓存数据。</p>
+            </section>
+        </main>
+
+        <footer>
+            <button id="saveSettingsButton" class="btn btn-primary btn-large">保存设置</button>
+        </footer>
     </div>
 
+    <!-- 底部通知区域 -->
     <div id="notification" class="notification"></div>
 
     <script src="options.js"></script>

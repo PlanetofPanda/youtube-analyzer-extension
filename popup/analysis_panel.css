@@ -1,0 +1,160 @@
+/* popup/analysis_panel.css */
+
+html, body {
+    height: 100%; /* 确保 html 和 body 填充整个 iframe */
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: transparent; /* 背景透明，让 iframe 的背景色生效 */
+    color: #333;
+    overflow: hidden; /* 避免 body 滚动条，内部内容由 .panel-content 控制滚动 */
+}
+
+.panel-container {
+    padding: 20px;
+    height: 100%; /* 确保容器填充父元素 */
+    box-sizing: border-box; /* 确保 padding 不会增加总高度 */
+    display: flex;
+    flex-direction: column;
+    position: relative; /* 用于定位关闭按钮 */
+}
+
+.close-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #888;
+    z-index: 10; /* 确保在内容之上 */
+}
+
+.panel-content {
+    flex-grow: 1; /* 占据剩余空间 */
+    overflow-y: auto; /* 内容溢出时滚动 */
+    padding-right: 5px; /* 防止滚动条遮挡内容 */
+    margin-top: 10px; /* 给关闭按钮留出空间 */
+}
+
+.panel-content h3 {
+    margin-top: 0;
+    color: #333;
+    font-size: 18px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+
+.panel-content h4 {
+    margin: 0 0 8px 0;
+    color: #444;
+    font-size: 16px;
+}
+
+.panel-content p {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.panel-content strong {
+    color: #222;
+}
+
+.stats-grid {
+    display: flex;
+    justify-content: space-around;
+    margin: 15px 0;
+    padding: 10px;
+    background-color: #ececec;
+    border-radius: 6px;
+    flex-wrap: wrap; /* 允许在小尺寸下换行 */
+}
+
+.stats-item {
+    text-align: center;
+    padding: 5px;
+    min-width: 80px; /* 确保每个统计项有最小宽度 */
+}
+
+.stats-item p {
+    margin: 0;
+}
+
+.stats-item .label {
+    font-size: 12px;
+    color: #777;
+}
+
+.stats-item .value {
+    font-size: 16px;
+    font-weight: bold;
+    margin-top: 2px;
+}
+
+/* 颜色 */
+.value-blue { color: #065fd4; }
+.value-green { color: #27ae60; }
+.value-orange { color: #f39c12; }
+
+.tags-container {
+    margin-top: 15px;
+}
+
+.tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.tag-item {
+    background-color: #e0e0e0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap; /* 防止标签文本换行 */
+}
+
+.placeholder {
+    text-align: center;
+    color: #aaa;
+    padding: 20px;
+}
+
+/* 滚动条美化（Webkit 浏览器） */
+.panel-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* 错误和加载消息样式 */
+.error-message {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.loading-message {
+    color: #f39c12;
+    font-weight: bold;
+}
+
