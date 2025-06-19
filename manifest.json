@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Data Analyzer",
+  "version": "1.0.0",
+  "description": "分析YouTube频道和视频数据，发现爆款内容趋势",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "identity",
+    "https://www.googleapis.com/*",
+    "https://www.youtube.com/*"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    }
+  },
+  "options_page": "options/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["https://www.youtube.com/*"]
+    }
+  ]
+}
