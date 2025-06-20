@@ -28,7 +28,8 @@
     "https://www.youtube.com/*"
   ],
   "background": {
-    "service_worker": "background/background.js"
+    "service_worker": "background/background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
@@ -39,7 +40,17 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["popup/popup.html", "popup/popup.css", "popup/analysis_panel.html", "popup/analysis_panel.css"],
+      "resources": [
+        "popup/popup.html", 
+        "popup/popup.css", 
+        "popup/analysis_panel.html", 
+        "popup/analysis_panel.css",
+        "libs/api-client.js",
+        "libs/data-processor.js",
+        "libs/chart-utils.js",
+        "libs/context-utils.js",
+        "popup/analysis_panel.js"
+      ],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

@@ -1,6 +1,6 @@
 // content/content.js
 
-console.log("YouTube Analyzer Content Script: Version 5.8 Loaded! (Ultimate Context Invalidation Defense)"); // Update version info
+console.log("YouTube Analyzer Content Script: Version 6.0 Loaded! (Enhanced Analysis Capabilities)"); // Update version info
 
 /**
  * ContentScriptManager class is responsible for injecting UI elements onto YouTube pages,
@@ -44,105 +44,163 @@ class ContentScriptManager {
      * @param {MessageEvent} event - Message event object
      */
     handleIframeMessage(event) {
-        // !!! ULTIMATE DEFENSE AGAINST "Extension context invalidated" !!!
-        // This check must be the very first thing. If 'chrome' is undefined or its runtime is gone,
-        // it means the extension context for this content script is dead.
-        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
-            console.warn("Content Script: Context invalidated during message handling. Removing listener.");
-            // Remove the listener immediately to prevent further errors from this dead context
-            window.removeEventListener('message', this.handleIframeMessageBound);
-            return; // Exit function early
-        }
-
-        let expectedOrigin;
+        // Wrap the entire function in a try-catch as the ultimate defense
         try {
-            expectedOrigin = chrome.runtime.getURL(''); 
+            // !!! ULTIMATE DEFENSE AGAINST "Extension context invalidated" !!!
+            // This check must be the very first thing. If 'chrome' is undefined or its runtime is gone,
+            // it means the extension context for this content script is dead.
+            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+                console.warn("Content Script: Context invalidated during message handling. Removing listener.");
+                // Remove the listener immediately to prevent further errors from this dead context
+                try {
+                    window.removeEventListener('message', this.handleIframeMessageBound);
+                } catch (error) {
+                    console.error("Content Script: Failed to remove message listener:", error);
+                }
+                return; // Exit function early
+            }
+
+            // If we get here, chrome.runtime exists, but it could still become invalid at any point
+            let expectedOrigin;
+            try {
+                expectedOrigin = chrome.runtime.getURL(''); 
+            } catch (e) {
+                // This catch is for cases where chrome.runtime.getURL itself throws the invalidation error.
+                console.warn("Content Script: Failed to get extension URL (context issue). Removing listener. Error:", e);
+                try {
+                    window.removeEventListener('message', this.handleIframeMessageBound);
+                } catch (error) {
+                    console.error("Content Script: Failed to remove message listener:", error);
+                }
+                return;
+            }
+
+            // Second defensive check - the extension context could become invalid between checks
+            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+                console.warn("Content Script: Context invalidated after URL check. Removing listener.");
+                try {
+                    window.removeEventListener('message', this.handleIframeMessageBound);
+                } catch (error) {
+                    console.error("Content Script: Failed to remove message listener:", error);
+                }
+                return;
+            }
+
+            // Ensure this.analysisIframe exists and its contentWindow property is accessible
+            if (!this.analysisIframe || !this.analysisIframe.contentWindow) {
+                console.warn("Content Script: Ignoring message: Analysis iframe not ready or accessible.");
+                return;
+            }
+            
+            // Strict check for message source: must come from our iframe and origin must match
+            if (event.source !== this.analysisIframe.contentWindow || !event.origin.startsWith(expectedOrigin)) {
+                // If the message is not from our iframe or origin doesn't match, ignore it
+                return;
+            }
+
+            // Third defensive check - context could become invalid at any time
+            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+                console.warn("Content Script: Context invalidated before processing message. Removing listener.");
+                try {
+                    window.removeEventListener('message', this.handleIframeMessageBound);
+                } catch (error) {
+                    console.error("Content Script: Failed to remove message listener:", error);
+                }
+                return;
+            }
+
+            // Extract message data safely
+            let type, data, messageContent;
+            try {
+                ({ type, data, message: messageContent } = event.data);
+                console.log("Content Script: Received message from our iframe:", type, data || messageContent);
+            } catch (e) {
+                console.warn("Content Script: Error extracting message data:", e);
+                return;
+            }
+
+            // Process the message
+            if (type === 'CLOSE_PANEL') {
+                console.log("Content Script: Received CLOSE_PANEL message from iframe.");
+                try {
+                    this.hideAnalysisIframe();
+                } catch (e) {
+                    console.error("Content Script: Error hiding analysis iframe:", e);
+                }
+            }
         } catch (e) {
-            // This catch is for cases where chrome.runtime.getURL itself throws the invalidation error.
-            console.warn("Content Script: Failed to get extension URL (context issue). Removing listener. Error:", e);
-            window.removeEventListener('message', this.handleIframeMessageBound);
-            return;
+            // Master error handler - catches any unexpected errors, including context invalidation
+            console.error("Content Script: Critical error in handleIframeMessage (possible context invalidation):", e);
+            try {
+                window.removeEventListener('message', this.handleIframeMessageBound);
+            } catch (removeError) {
+                console.error("Content Script: Failed to remove message listener after error:", removeError);
+            }
         }
-
-        // Ensure this.analysisIframe exists and its contentWindow property is accessible
-        if (!this.analysisIframe || !this.analysisIframe.contentWindow) {
-            console.warn("Content Script: Ignoring message: Analysis iframe not ready or accessible.");
-            return;
-        }
-        
-        // Strict check for message source: must come from our iframe and origin must match
-        if (event.source !== this.analysisIframe.contentWindow || !event.origin.startsWith(expectedOrigin)) {
-            // If the message is not from our iframe or origin doesn't match, ignore it
-            return;
-        }
-
-        const { type, data, message } = event.data;
-        console.log("Content Script: Received message from our iframe:", type, data || message);
-
-        if (type === 'CLOSE_PANEL') {
-            console.log("Content Script: Received CLOSE_PANEL message from iframe.");
-            this.hideAnalysisIframe();
-        }
-    }
+    };
 
 
     /**
      * Creates and injects the analysis panel iframe.
      */
     injectAnalysisIframe() {
-        // Check context validity BEFORE accessing chrome.runtime for iframe.src
-        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
-            console.error("Content Script: Cannot inject iframe: Extension context is invalid at injection time.");
-            return;
-        }
-
-        if (document.getElementById('youtube-analyzer-iframe')) {
-            this.analysisIframe = document.getElementById('youtube-analyzer-iframe');
-            this.hideAnalysisIframe(); // Ensure initial state is hidden
-            console.log("Content Script: Reusing existing analysis iframe.");
-            return;
-        }
-
-        const iframe = document.createElement('iframe');
-        iframe.id = 'youtube-analyzer-iframe';
         try {
-            iframe.src = chrome.runtime.getURL('popup/analysis_panel.html'); 
+            // Check context validity BEFORE accessing chrome.runtime for iframe.src
+            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+                console.error("Content Script: Cannot inject iframe: Extension context is invalid at injection time.");
+                return;
+            }
+
+            if (document.getElementById('youtube-analyzer-iframe')) {
+                this.analysisIframe = document.getElementById('youtube-analyzer-iframe');
+                this.hideAnalysisIframe(); // Ensure initial state is hidden
+                console.log("Content Script: Reusing existing analysis iframe.");
+                return;
+            }
+
+            const iframe = document.createElement('iframe');
+            iframe.id = 'youtube-analyzer-iframe';
+            try {
+                iframe.src = chrome.runtime.getURL('popup/analysis_panel.html'); 
+            } catch (e) {
+                console.error("Content Script: Failed to set iframe src. Extension context may be invalid.", e);
+                return; // If src cannot be set, stop injection
+            }
+            iframe.frameBorder = '0';
+            iframe.allow = 'clipboard-write; clipboard-read;';
+
+            iframe.style.cssText = `
+                display: block !important;
+                position: fixed !important;
+                top: 10px !important;
+                right: 10px !important;
+                width: 550px !important;
+                min-height: 50px !important;
+                max-height: calc(100vh - 20px) !important;
+                height: auto !important;
+                overflow: auto !important;
+                background-color: rgba(255, 255, 255, 0.98) !important;
+                border: 1px solid #065fd4 !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 18px rgba(0,0,0,0.25) !important;
+                z-index: 2147483647 !important;
+                transition: all 0.3s ease-in-out !important;
+                opacity: 0 !important;
+                transform: translateX(100%) !important;
+            `;
+
+            document.body.appendChild(iframe);
+            this.analysisIframe = iframe; // Assign immediately after appendChild
+
+            iframe.onload = () => {
+                console.log("Content Script: Analysis iframe loaded.");
+            };
+
+            console.log("Content Script: Analysis iframe injected into page.");
         } catch (e) {
-            console.error("Content Script: Failed to set iframe src. Extension context may be invalid.", e);
-            return; // If src cannot be set, stop injection
+            console.error("Content Script: Error injecting analysis iframe:", e);
         }
-        iframe.frameBorder = '0';
-        iframe.allow = 'clipboard-write; clipboard-read;';
-
-        iframe.style.cssText = `
-            display: block !important;
-            position: fixed !important;
-            top: 10px !important;
-            right: 10px !important;
-            width: 350px !important;
-            min-height: 50px !important;
-            max-height: calc(100vh - 20px) !important;
-            height: auto !important;
-            overflow: auto !important;
-            background-color: rgba(255, 255, 255, 0.98) !important;
-            border: 1px solid #065fd4 !important;
-            border-radius: 8px !important;
-            box-shadow: 0 4px 18px rgba(0,0,0,0.25) !important;
-            z-index: 2147483647 !important;
-            transition: all 0.3s ease-in-out !important;
-            opacity: 0 !important;
-            transform: translateX(100%) !important;
-        `;
-
-        document.body.appendChild(iframe);
-        this.analysisIframe = iframe; // Assign immediately after appendChild
-
-        iframe.onload = () => {
-            console.log("Content Script: Analysis iframe loaded.");
-        };
-
-        console.log("Content Script: Analysis iframe injected into page.");
-    }
+    };
 
     /**
      * Shows the analysis iframe.
@@ -153,7 +211,7 @@ class ContentScriptManager {
             this.analysisIframe.style.transform = 'translateX(0%)';
             console.log("Content Script: Analysis iframe shown.");
         }
-    }
+    };
 
     /**
      * Hides the analysis iframe.
@@ -164,7 +222,7 @@ class ContentScriptManager {
             this.analysisIframe.style.transform = 'translateX(100%)';
             console.log("Content Script: Analysis iframe hidden.");
         }
-    }
+    };
 
     /**
      * Uses MutationObserver to watch for body DOM changes to detect URL changes.
@@ -189,7 +247,7 @@ class ContentScriptManager {
 
         observer.observe(document.body, { childList: true, subtree: true });
         this.observer = observer; // Store observer reference
-    }
+    };
 
     /**
      * Determines which analysis buttons to add based on the current URL.
@@ -200,7 +258,7 @@ class ContentScriptManager {
         } else if (window.location.pathname.startsWith('/channel/') || window.location.pathname.startsWith('/user/')) {
             this.addChannelAnalysisButton();
         }
-    }
+    };
 
     /**
      * Gets the video ID from the URL.
@@ -208,7 +266,7 @@ class ContentScriptManager {
     getVideoIdFromUrl() {
         const urlParams = new URLSearchParams(window.location.search);
         return urlParams.get('v');
-    }
+    };
 
     /**
      * Gets the channel ID from the URL.
@@ -223,7 +281,7 @@ class ContentScriptManager {
             console.warn("Content Script: '/user/' URLs provide username, not direct channel ID. API might require conversion.");
         }
         return channelId;
-    }
+    };
 
     /**
      * Injects an "Analyze Video" button onto the video page.
@@ -272,7 +330,7 @@ class ContentScriptManager {
         
         button.onclick = () => this.analyzeVideoAndSendToIframe(button);
         console.log("Content Script: 'Analyze Video' button added.");
-    }
+    };
 
     /**
      * Injects an "Analyze Channel" button onto the channel page.
@@ -315,7 +373,7 @@ class ContentScriptManager {
         
         button.onclick = () => this.analyzeChannelAndSendToIframe(button);
         console.log("Content Script: 'Analyze Channel' button added.");
-    }
+    };
 
     /**
      * Analyzes a video and sends its data to the iframe.
@@ -331,19 +389,20 @@ class ContentScriptManager {
 
         button.textContent = '分析中...';
         button.disabled = true;
-        this.sendDataToIframe({ type: 'LOADING', message: "正在获取视频数据..." });
+        this.sendDataToIframe({ type: 'LOADING', message: "正在获取和分析视频数据..." });
         this.showAnalysisIframe();
 
         try {
+            // 使用增强的视频分析API
             const response = await chrome.runtime.sendMessage({
-                type: 'GET_VIDEO_DATA',
+                type: 'ANALYZE_VIDEO_DATA',
                 videoId: videoId
             });
 
             if (response.success) {
-                this.sendDataToIframe({ type: 'VIDEO_DATA', data: response.data });
+                this.sendDataToIframe({ type: 'ENHANCED_VIDEO_DATA', data: response.data });
             } else {
-                this.sendDataToIframe({ type: 'ERROR', message: `获取视频数据失败: ${response.error}` });
+                this.sendDataToIframe({ type: 'ERROR', message: `分析视频数据失败: ${response.error}` });
             }
         } catch (error) {
             this.sendDataToIframe({ type: 'ERROR', message: `通信错误: ${error.message}` });
@@ -351,7 +410,7 @@ class ContentScriptManager {
             button.textContent = '分析视频';
             button.disabled = false;
         }
-    }
+    };
 
     /**
      * Analyzes a channel and sends its data to the iframe.
@@ -367,19 +426,20 @@ class ContentScriptManager {
 
         button.textContent = '分析中...';
         button.disabled = true;
-        this.sendDataToIframe({ type: 'LOADING', message: "正在获取频道数据..." });
+        this.sendDataToIframe({ type: 'LOADING', message: "正在获取和分析频道数据..." });
         this.showAnalysisIframe();
 
         try {
+            // 使用增强的频道分析API
             const response = await chrome.runtime.sendMessage({
-                type: 'GET_CHANNEL_DATA',
+                type: 'ANALYZE_CHANNEL_DATA',
                 channelId: channelId
             });
 
             if (response.success) {
-                this.sendDataToIframe({ type: 'CHANNEL_DATA', data: response.data });
+                this.sendDataToIframe({ type: 'ENHANCED_CHANNEL_DATA', data: response.data });
             } else {
-                this.sendDataToIframe({ type: 'ERROR', message: `获取频道数据失败: ${response.error}` });
+                this.sendDataToIframe({ type: 'ERROR', message: `分析频道数据失败: ${response.error}` });
             }
         } catch (error) {
             this.sendDataToIframe({ type: 'ERROR', message: `通信错误: ${error.message}` });
@@ -387,7 +447,7 @@ class ContentScriptManager {
             button.textContent = '分析频道';
             button.disabled = false;
         }
-    }
+    };
 
     /**
      * Sends data to the iframe via postMessage.
@@ -407,7 +467,7 @@ class ContentScriptManager {
         } catch (e) {
             console.error("Content Script: Error sending data to iframe (likely context invalidation):", e);
         }
-    }
+    };
 }
 
 // Instantiate ContentScriptManager to start listening and injecting
