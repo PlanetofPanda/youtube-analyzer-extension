@@ -4,6 +4,16 @@ import dataProcessor from '../libs/data-processor.js';
 import chartUtils from '../libs/chart-utils.js';
 import contextUtils from '../libs/context-utils.js';
 
+// 初始化状态跟踪，防止重复初始化
+let isInitialized = false;
+let initializationAttempts = 0;
+const MAX_INITIALIZATION_ATTEMPTS = 3;
+let lastInitAttemptTime = 0;
+const INIT_COOLDOWN_MS = 30000; // 30秒冷却时间
+
+// 全局变量来持有 YouTubeAnalyzer 实例，确保所有事件监听器都可以访问它
+let youtubeAnalyzerInstance = null;
+
 // 全局Service Worker错误处理
 self.onerror = function(message, source, lineno, colno, error) {
     console.error("Service Worker Global Error:", {
@@ -21,9 +31,6 @@ self.addEventListener('install', (event) => {
     event.waitUntil(self.skipWaiting()); // 强制新版本Service Worker立即激活
 });
 
-// 全局变量来持有 YouTubeAnalyzer 实例，确保所有事件监听器都可以访问它
-let youtubeAnalyzerInstance;
-
 self.addEventListener('activate', (event) => {
     console.log("Service Worker: 'activate' event triggered.");
     event.waitUntil(
@@ -31,47 +38,71 @@ self.addEventListener('activate', (event) => {
             console.log("Service Worker: 'activate' - Claiming clients.");
             await self.clients.claim(); // 激活后立即控制所有页面
 
-            // 再次尝试更细粒度的错误捕获
+            // 检查是否已初始化或冷却时间是否已过
+            const now = Date.now();
+            if (isInitialized) {
+                console.log("Service Worker: Already initialized, skipping initialization.");
+                return;
+            }
+            
+            if (initializationAttempts >= MAX_INITIALIZATION_ATTEMPTS) {
+                console.warn(`Service Worker: Maximum initialization attempts (${MAX_INITIALIZATION_ATTEMPTS}) reached. Waiting for manual restart.`);
+                return;
+            }
+            
+            if (now - lastInitAttemptTime < INIT_COOLDOWN_MS && lastInitAttemptTime !== 0) {
+                console.log(`Service Worker: Initialization cooldown period (${INIT_COOLDOWN_MS}ms) not elapsed. Skipping initialization.`);
+                return;
+            }
+            
+            // 更新初始化尝试计数和时间
+            initializationAttempts++;
+            lastInitAttemptTime = now;
+
+            // 尝试初始化
             try {
-                // 验证扩展上下文是否有效
-                if (!contextUtils.isExtensionContextValid()) {
-                    throw new Error("Extension context is invalid during Service Worker activation.");
+                // 简化的上下文验证，针对Service Worker环境
+                if (typeof chrome === 'undefined' || !chrome.runtime) {
+                    throw new Error("Basic Chrome API not available during Service Worker activation.");
                 }
                 
                 console.log("Service Worker: 'activate' - Instantiating YouTubeAnalyzer.");
-                youtubeAnalyzerInstance = new YouTubeAnalyzer();
                 
-                console.log("Service Worker: 'activate' - Calling youtubeAnalyzerInstance.init(). (Pre-await)");
+                // 单例模式：确保只有一个实例
+                if (!youtubeAnalyzerInstance) {
+                    youtubeAnalyzerInstance = new YouTubeAnalyzer();
+                }
+                
+                console.log("Service Worker: 'activate' - Calling youtubeAnalyzerInstance.init().");
                 await youtubeAnalyzerInstance.init(); // 等待初始化完成
-                console.log("Service Worker: 'activate' - youtubeAnalyzerInstance.init() has resolved.");
-
+                
+                // 标记初始化完成
+                isInitialized = true;
                 console.log("Service Worker: 'activate' - Initialization complete. Service Worker fully ready.");
             } catch (error) {
                 console.error("Service Worker: 'activate' - CRITICAL INITIALIZATION FAILURE:", error);
-                // 确保这里能捕获到错误信息，并可能通过一个持久化的存储机制记录下来
-                // 重新抛出错误，以便 Service Worker 状态能正确反映问题
-                throw error;
+                isInitialized = false; // 重置初始化状态，允许下次尝试
             }
         })().catch(error => {
-            console.error("Service Worker: 'activate' - Unhandled Promise Rejection or Top-level Error:", error);
-            // 最终的捕获，确保即使Promise链断裂也能记录
+            console.error("Service Worker: 'activate' - Unhandled Promise Rejection:", error);
         })
     );
 });
 
-console.log("YouTube Analyzer Background Service Worker: Version 4.0 Loaded! (With Context Validation)"); // 更新版本信息
+console.log("YouTube Analyzer Background Service Worker: Version 6.0 Loaded! (With Listener Flag Fix)");
 
 /**
  * YouTubeAnalyzer类现在使用api-client.js库来处理API交互，
  * 并增加了使用data-processor.js的数据分析功能。
  * 它仍然负责消息处理和事件协调。
- * 新增使用context-utils.js来保护扩展上下文。
+ * 添加了防止重复初始化和更可靠的上下文验证。
  */
 class YouTubeAnalyzer {
     constructor() {
         console.log("Background: YouTubeAnalyzer constructor: Initializing with API client and context validation.");
         this.messageHandler = null;
         this.contextValidator = null;
+        this.isListenerActive = false;
     }
 
     /**
@@ -81,9 +112,9 @@ class YouTubeAnalyzer {
         console.log("Background: init() method entered.");
 
         try {
-            // 首先验证扩展上下文是否有效
-            if (!contextUtils.isExtensionContextValid()) {
-                throw new Error("Extension context is invalid during initialization.");
+            // 简化的验证，针对Service Worker环境
+            if (typeof chrome === 'undefined' || !chrome.runtime) {
+                throw new Error("Basic Chrome API not available during initialization.");
             }
             
             console.log("Background: init() - Initializing YouTube API client.");
@@ -94,7 +125,7 @@ class YouTubeAnalyzer {
             this.addSafeMessageListener();
             console.log("Background: init() - Message listener set up successfully.");
             
-            // 设置定期上下文验证
+            // 设置轻量级上下文验证，仅在Service Worker环境下需要
             this.setupContextValidation();
 
         } catch (error) {
@@ -105,24 +136,29 @@ class YouTubeAnalyzer {
     }
     
     /**
-     * 设置定期上下文验证
+     * 设置轻量级上下文验证，减少检查频率，避免重复初始化
      */
     setupContextValidation() {
-        this.contextValidator = contextUtils.createContextValidator(() => {
-            console.warn("Background: Extension context became invalid, attempting recovery...");
+        // 如果已经有验证器，先清除它
+        if (this.contextValidator) {
+            clearInterval(this.contextValidator);
+            this.contextValidator = null;
+            console.log("Background: Cleared existing context validator");
+        }
+        
+        // 创建一个新的验证器，使用更长的间隔
+        this.contextValidator = setInterval(() => {
+            // 简化的验证，仅检查基本API是否可用
+            const isValid = typeof chrome !== 'undefined' && !!chrome.runtime;
+            console.log(`Background: Context validation check - Context valid: ${isValid}, Listener active: ${this.isListenerActive}`);
             
-            // 尝试清理和恢复
-            this.cleanupInvalidContext();
-            
-            // 尝试重新初始化（如果适用）
-            setTimeout(() => {
-                if (contextUtils.isExtensionContextValid()) {
-                    console.log("Background: Context appears valid again, re-initializing...");
-                    this.addSafeMessageListener();
-                    this.setupContextValidation();
-                }
-            }, 5000);
-        }, 10000); // 每10秒检查一次
+            if (!isValid && this.isListenerActive) {
+                console.warn("Background: Basic Chrome API no longer available, cleanup required");
+                this.cleanupInvalidContext();
+            }
+        }, 120000); // 每120秒检查一次，进一步降低频率
+        
+        console.log("Background: New context validator created with 120s interval");
     }
     
     /**
@@ -138,7 +174,12 @@ class YouTubeAnalyzer {
         if (this.contextValidator) {
             clearInterval(this.contextValidator);
             this.contextValidator = null;
+            console.log("Background: Context validator cleared during cleanup");
         }
+        
+        // 重置初始化状态，但保持尝试计数，避免不必要的重启
+        isInitialized = false;
+        console.log("Background: Initialization state reset, ready for next activation if needed");
     }
     
     /**
@@ -155,7 +196,8 @@ class YouTubeAnalyzer {
         if (contextUtils.isExtensionContextValid()) {
             chrome.runtime.onMessage.addListener(boundHandler);
             this.messageHandler = boundHandler;
-            console.log("Background: Message listener safely added.");
+            this.isListenerActive = true; // 关键修复：设置监听器激活标志
+            console.log("Background: Message listener safely added and marked as active.");
         } else {
             console.warn("Background: Cannot add message listener, context is invalid.");
         }
@@ -171,6 +213,7 @@ class YouTubeAnalyzer {
                 console.log("Background: Message listener safely removed.");
             });
             this.messageHandler = null;
+            this.isListenerActive = false; // 关键修复：清除监听器激活标志
         }
     }
 

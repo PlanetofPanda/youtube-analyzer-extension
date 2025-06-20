@@ -33,7 +33,23 @@ class PopupController {
      */
     async checkAPIKeyStatus() {
         try {
-            const result = await chrome.storage.sync.get('youtubeApiKey');
+            // 使用防御性编程，确保storage API调用成功
+            let result;
+            try {
+                result = await chrome.storage.sync.get('youtubeApiKey');
+                // 确保result是一个有效对象
+                if (!result) {
+                    throw new Error("无法访问存储API");
+                }
+            } catch (storageError) {
+                console.error("Storage access error:", storageError);
+                this.updateStatus('访问存储API时发生错误，请重试。', 'error', this.elements.currentVideoStatus);
+                this.updateStatus('访问存储API时发生错误，请重试。', 'error', this.elements.trendingVideosList);
+                this.elements.analyzeCurrentVideoButton.disabled = true;
+                this.elements.loadTrendingVideosButton.disabled = true;
+                return;
+            }
+            
             const apiKey = result.youtubeApiKey;
             if (!apiKey) {
                 this.updateStatus('请在设置中输入您的YouTube API密钥。', 'error', this.elements.currentVideoStatus);
@@ -49,6 +65,7 @@ class PopupController {
         } catch (error) {
             console.error("Error checking API key status:", error);
             this.updateStatus('检查API密钥时发生错误。', 'error', this.elements.currentVideoStatus);
+            this.updateStatus('检查API密钥时发生错误。', 'error', this.elements.trendingVideosList);
         }
     }
 
@@ -64,6 +81,66 @@ class PopupController {
     }
 
     /**
+     * 重试发送消息到后台脚本，处理"接收端不存在"错误
+     * @param {Object} message - 要发送的消息对象
+     * @param {number} maxRetries - 最大重试次数
+     * @param {number} delay - 重试之间的延迟（毫秒）
+     * @returns {Promise<Object>} - 后台脚本的响应
+     */
+    async sendMessageWithRetry(message, maxRetries = 3, delay = 500) {
+        let lastError = null;
+        
+        // 添加时间戳，帮助诊断
+        const messageWithTimestamp = {
+            ...message,
+            _timestamp: Date.now()
+        };
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`尝试发送消息到后台 (尝试 ${attempt + 1}/${maxRetries + 1})`, messageWithTimestamp);
+                
+                // 检查扩展上下文是否有效
+                if (!chrome || !chrome.runtime) {
+                    throw new Error("扩展上下文无效，请重新加载扩展");
+                }
+                
+                const response = await chrome.runtime.sendMessage(messageWithTimestamp);
+                console.log(`收到后台响应 (尝试 ${attempt + 1})`, response);
+                
+                // 如果响应是undefined，可能是后台脚本没有正确响应
+                if (response === undefined) {
+                    throw new Error("未收到后台响应，可能是服务未准备好");
+                }
+                
+                return response;
+            } catch (error) {
+                lastError = error;
+                console.warn(`消息发送失败 (尝试 ${attempt + 1})`, error);
+                
+                // 特别处理"接收端不存在"错误
+                if (error.message && error.message.includes("Receiving end does not exist")) {
+                    console.log(`后台服务未准备好，等待 ${delay}ms 后重试...`);
+                    
+                    // 如果不是最后一次尝试，则等待后重试
+                    if (attempt < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        // 每次重试增加延迟
+                        delay = Math.min(delay * 1.5, 3000); // 最大延迟3秒
+                        continue;
+                    }
+                }
+                
+                // 如果是其他错误或已达到最大重试次数，则抛出错误
+                throw error;
+            }
+        }
+        
+        // 这一行通常不会执行，因为循环内部会抛出错误或返回响应
+        throw lastError;
+    }
+
+    /**
      * 分析当前活动标签页的YouTube视频数据。
      */
     async analyzeCurrentVideo() {
@@ -74,7 +151,7 @@ class PopupController {
         try {
             // 获取当前活动标签页
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (!tab || !tab.url || !tab.url.startsWith('https://www.youtube.com/watch')) {
+            if (!tab || !tab.url || !tab.url.startsWith('https://www.youtube.com/watch')) { // 已更正
                 this.updateStatus('当前不是YouTube视频页面。', 'error', this.elements.currentVideoStatus);
                 this.elements.currentVideoData.innerHTML = `<p class="placeholder">请在YouTube视频页面上使用此功能。</p>`;
                 return;
@@ -89,18 +166,43 @@ class PopupController {
                 return;
             }
 
-            // 向background script发送消息请求视频数据
-            const response = await chrome.runtime.sendMessage({
-                type: 'GET_VIDEO_DATA',
-                videoId: videoId
-            });
+            // 使用防御性编程处理消息发送和响应
+            let response;
+            try {
+                // 使用重试机制向background script发送消息请求视频数据
+                this.updateStatus('正在连接到后台服务...', 'loading', this.elements.currentVideoStatus);
+                
+                response = await this.sendMessageWithRetry({
+                    type: 'GET_VIDEO_DATA',
+                    videoId: videoId
+                });
+                
+                // 检查response是否为undefined
+                if (response === undefined) {
+                    throw new Error("未收到后台服务响应，请确保扩展正常运行");
+                }
+            } catch (messageError) {
+                console.error("Message sending error:", messageError);
+                this.displayVideoData(null); // 清空数据
+                
+                // 提供更友好的错误消息，特别是针对连接问题
+                let errorMessage = messageError.message;
+                if (messageError.message.includes("Receiving end does not exist")) {
+                    errorMessage = "无法连接到后台服务，请尝试重新加载扩展或刷新页面";
+                }
+                
+                this.updateStatus(`通信错误: ${errorMessage}`, 'error', this.elements.currentVideoStatus);
+                return;
+            }
 
-            if (response.success) {
+            // 安全地检查response属性
+            if (response && response.success) {
                 this.displayVideoData(response.data);
                 this.updateStatus('视频数据加载成功！', 'success', this.elements.currentVideoStatus);
             } else {
                 this.displayVideoData(null); // 清空数据
-                this.updateStatus(`错误: ${response.error}`, 'error', this.elements.currentVideoStatus);
+                const errorMsg = response && response.error ? response.error : '未知错误';
+                this.updateStatus(`错误: ${errorMsg}`, 'error', this.elements.currentVideoStatus);
             }
         } catch (error) {
             console.error("Error analyzing current video:", error);
@@ -175,18 +277,44 @@ class PopupController {
         const category = this.elements.categorySelect.value;
 
         try {
-            const response = await chrome.runtime.sendMessage({
-                type: 'GET_TRENDING_VIDEOS',
-                regionCode: regionCode,
-                category: category
-            });
+            // 使用防御性编程处理消息发送和响应
+            let response;
+            try {
+                this.updateStatus('正在连接到后台服务...', 'loading', this.elements.trendingVideosList);
+                
+                // 使用重试机制向background script发送消息请求趋势视频
+                response = await this.sendMessageWithRetry({
+                    type: 'GET_TRENDING_VIDEOS',
+                    regionCode: regionCode,
+                    category: category
+                });
+                
+                // 检查response是否为undefined
+                if (response === undefined) {
+                    throw new Error("未收到后台服务响应，请确保扩展正常运行");
+                }
+            } catch (messageError) {
+                console.error("Message sending error:", messageError);
+                this.displayTrendingVideos([]); // 清空列表
+                
+                // 提供更友好的错误消息，特别是针对连接问题
+                let errorMessage = messageError.message;
+                if (messageError.message.includes("Receiving end does not exist")) {
+                    errorMessage = "无法连接到后台服务，请尝试重新加载扩展或刷新页面";
+                }
+                
+                this.updateStatus(`通信错误: ${errorMessage}`, 'error', this.elements.trendingVideosList);
+                return;
+            }
 
-            if (response.success && response.data && response.data.length > 0) {
+            // 安全地检查response属性
+            if (response && response.success && response.data && response.data.length > 0) {
                 this.displayTrendingVideos(response.data);
                 this.updateStatus('趋势视频加载成功！', 'success', this.elements.trendingVideosList);
             } else {
                 this.displayTrendingVideos([]); // 清空列表
-                this.updateStatus(`没有找到趋势视频或: ${response.error || '未知错误'}`, 'error', this.elements.trendingVideosList);
+                const errorMsg = response && response.error ? response.error : '未知错误或没有可用数据';
+                this.updateStatus(`没有找到趋势视频或: ${errorMsg}`, 'error', this.elements.trendingVideosList);
             }
         } catch (error) {
             console.error("Error loading trending videos:", error);
@@ -223,13 +351,11 @@ class PopupController {
             const videoItem = document.createElement('div');
             videoItem.className = 'video-item';
             videoItem.innerHTML = `
-                <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" title="${title}">
-                    <img src="${thumbnailUrl}" alt="${title}">
+                <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" title="${title}"> <img src="${thumbnailUrl}" alt="${title}">
                 </a>
                 <div class="video-item-details">
                     <h3>
-                        <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank">${title}</a>
-                    </h3>
+                        <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank">${title}</a> </h3>
                     <p>${channelTitle}</p>
                     <p class="stats">观看量: ${viewCount} | 点赞数: ${likeCount}</p>
                 </div>
@@ -248,4 +374,3 @@ class PopupController {
 
 // 实例化PopupController，启动Popup逻辑
 new PopupController();
-

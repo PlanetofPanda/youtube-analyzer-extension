@@ -25,7 +25,7 @@
   ],
   "host_permissions": [
     "https://www.googleapis.com/*",
-    "https://www.youtube.com/*"
+    "*://*.youtube.com/*"  
   ],
   "background": {
     "service_worker": "background/background.js",
@@ -33,7 +33,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
+      "matches": ["*://*.youtube.com/*"], 
       "js": ["content/content.js"],
       "run_at": "document_idle"
     }
@@ -51,7 +51,7 @@
         "libs/context-utils.js",
         "popup/analysis_panel.js"
       ],
-      "matches": ["https://www.youtube.com/*"]
+      "matches": ["*://*.youtube.com/*"]
     }
   ]
 }

@@ -1,6 +1,6 @@
 // content/content.js
 
-console.log("YouTube Analyzer Content Script: Version 6.0 Loaded! (Enhanced Analysis Capabilities)"); // Update version info
+console.log("YouTube Analyzer Content Script: Version 6.1 Loaded! (Enhanced Analysis Capabilities and Resizing)"); // 更新版本信息
 
 /**
  * ContentScriptManager class is responsible for injecting UI elements onto YouTube pages,
@@ -16,6 +16,8 @@ class ContentScriptManager {
         
         // Add the message listener
         try {
+            // 确保侦听器被安全且幂等地添加
+            window.removeEventListener('message', this.handleIframeMessageBound); // 防止重复添加侦听器
             window.addEventListener('message', this.handleIframeMessageBound);
             console.log("Content Script: Message listener added in constructor.");
         } catch (e) {
@@ -40,7 +42,8 @@ class ContentScriptManager {
     }
 
     /**
-     * Handles messages from the iframe, e.g., panel close requests.
+     * Handles messages from the iframe, e.g., panel close requests, resize requests.
+     * This function needs to be very robust to context invalidation.
      * @param {MessageEvent} event - Message event object
      */
     handleIframeMessage(event) {
@@ -110,10 +113,10 @@ class ContentScriptManager {
             }
 
             // Extract message data safely
-            let type, data, messageContent;
+            let type, data, messageContent, height; // Destructure 'height' for resize requests
             try {
-                ({ type, data, message: messageContent } = event.data);
-                console.log("Content Script: Received message from our iframe:", type, data || messageContent);
+                ({ type, data, message: messageContent, height } = event.data);
+                console.log("Content Script: Received message from our iframe:", type, data || messageContent || `Height: ${height}`);
             } catch (e) {
                 console.warn("Content Script: Error extracting message data:", e);
                 return;
@@ -126,6 +129,21 @@ class ContentScriptManager {
                     this.hideAnalysisIframe();
                 } catch (e) {
                     console.error("Content Script: Error hiding analysis iframe:", e);
+                }
+            } else if (type === 'RESIZE_PANEL') { // Handle resize request
+                if (this.analysisIframe && typeof height === 'number') {
+                    // Set a minimum height for the iframe and clamp to max-height for UI stability
+                    const minAllowedHeight = 50; // As per existing CSS
+                    // The max-height should be based on the viewport height
+                    const maxAllowedHeight = window.innerHeight - 20; // 100vh - 20px buffer from original CSS
+
+                    const clampedHeight = Math.min(maxAllowedHeight, Math.max(minAllowedHeight, height));
+
+                    this.analysisIframe.style.height = `${clampedHeight}px`;
+                    console.log(`Content Script: Iframe resized to ${clampedHeight}px.`);
+
+                    // Optionally, send an acknowledgment back to the iframe
+                    this.sendDataToIframe({ type: 'RESIZE_PANEL_ACK', newHeight: clampedHeight });
                 }
             }
         } catch (e) {
@@ -177,7 +195,7 @@ class ContentScriptManager {
                 width: 550px !important;
                 min-height: 50px !important;
                 max-height: calc(100vh - 20px) !important;
-                height: auto !important;
+                height: 300px !important; /* Initial height, will be adjusted by JS */
                 overflow: auto !important;
                 background-color: rgba(255, 255, 255, 0.98) !important;
                 border: 1px solid #065fd4 !important;
@@ -194,6 +212,10 @@ class ContentScriptManager {
 
             iframe.onload = () => {
                 console.log("Content Script: Analysis iframe loaded.");
+                // Initial resize request after iframe content loads
+                if (this.analysisIframe && this.analysisIframe.contentWindow) {
+                    this.analysisIframe.contentWindow.postMessage({ type: 'INITIAL_RESIZE_REQUEST' }, chrome.runtime.getURL(''));
+                }
             };
 
             console.log("Content Script: Analysis iframe injected into page.");
@@ -229,246 +251,4 @@ class ContentScriptManager {
      */
     observeUrlChanges() {
         let lastUrl = location.href;
-        // Disconnect existing observer if any before creating a new one
-        if (this.observer) {
-            this.observer.disconnect();
-            console.log("Content Script: Existing MutationObserver disconnected.");
-        }
-        
-        const observer = new MutationObserver(() => {
-            const url = location.href;
-            if (url !== lastUrl) {
-                lastUrl = url;
-                console.log("Content Script: URL changed to:", url);
-                this.hideAnalysisIframe();
-                this.addButtonsToPage(); 
-            }
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
-        this.observer = observer; // Store observer reference
-    };
-
-    /**
-     * Determines which analysis buttons to add based on the current URL.
-     */
-    addButtonsToPage() {
-        if (window.location.pathname.startsWith('/watch')) {
-            this.addVideoAnalysisButton();
-        } else if (window.location.pathname.startsWith('/channel/') || window.location.pathname.startsWith('/user/')) {
-            this.addChannelAnalysisButton();
-        }
-    };
-
-    /**
-     * Gets the video ID from the URL.
-     */
-    getVideoIdFromUrl() {
-        const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get('v');
-    };
-
-    /**
-     * Gets the channel ID from the URL.
-     */
-    getChannelIdFromUrl() {
-        const path = window.location.pathname;
-        let channelId = null;
-        if (path.startsWith('/channel/')) {
-            channelId = path.split('/')[2];
-        } else if (path.startsWith('/user/')) {
-            channelId = path.split('/')[2];
-            console.warn("Content Script: '/user/' URLs provide username, not direct channel ID. API might require conversion.");
-        }
-        return channelId;
-    };
-
-    /**
-     * Injects an "Analyze Video" button onto the video page.
-     */
-    addVideoAnalysisButton() {
-        let targetElement = document.querySelector('ytd-watch-metadata #above-the-fold #top-row');
-        if (!targetElement) {
-            targetElement = document.querySelector('#actions-inner #segmented-like-button');
-            if (targetElement) targetElement = targetElement.parentElement;
-        }
-        if (!targetElement) {
-            targetElement = document.querySelector('#actions #top-level-buttons-computed');
-        }
-
-        if (!targetElement || document.getElementById('youtube-analyzer-video-button')) {
-            return;
-        }
-
-        const button = document.createElement('button');
-        button.id = 'youtube-analyzer-video-button';
-        button.textContent = '分析视频';
-        button.style.cssText = `
-            background-color: #065fd4;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-left: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            transition: background-color 0.3s ease;
-            white-space: nowrap;
-        `;
-        button.onmouseover = () => button.style.backgroundColor = '#044cbd';
-        button.onmouseout = () => button.style.backgroundColor = '#065fd4';
-
-        if (targetElement.firstChild) {
-            targetElement.insertBefore(button, targetElement.firstChild);
-        } else {
-            targetElement.appendChild(button);
-        }
-        
-        button.onclick = () => this.analyzeVideoAndSendToIframe(button);
-        console.log("Content Script: 'Analyze Video' button added.");
-    };
-
-    /**
-     * Injects an "Analyze Channel" button onto the channel page.
-     */
-    addChannelAnalysisButton() {
-        let targetElement = document.querySelector('ytd-c4-tabbed-header-renderer #buttons #buttons-inner');
-        
-        if (!targetElement) {
-            targetElement = document.querySelector('ytd-channel-about-metadata-renderer #right-column #subscribe-button');
-             if (targetElement) targetElement = targetElement.parentElement;
-        }
-
-        if (!targetElement || document.getElementById('youtube-analyzer-channel-button')) {
-            return;
-        }
-
-        const button = document.createElement('button');
-        button.id = 'youtube-analyzer-channel-button';
-        button.textContent = '分析频道';
-        button.style.cssText = `
-            background-color: #065fd4;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-left: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            transition: background-color 0.3s ease;
-            white-space: nowrap;
-        `;
-        button.onmouseover = () => button.style.backgroundColor = '#044cbd';
-        button.onmouseout = () => button.style.backgroundColor = '#065fd4';
-
-        targetElement.appendChild(button);
-        
-        button.onclick = () => this.analyzeChannelAndSendToIframe(button);
-        console.log("Content Script: 'Analyze Channel' button added.");
-    };
-
-    /**
-     * Analyzes a video and sends its data to the iframe.
-     * @param {HTMLElement} button - The button that triggered the analysis
-     */
-    async analyzeVideoAndSendToIframe(button) {
-        const videoId = this.getVideoIdFromUrl();
-        if (!videoId) {
-            this.sendDataToIframe({ type: 'ERROR', message: "无法获取视频ID。" });
-            this.showAnalysisIframe();
-            return;
-        }
-
-        button.textContent = '分析中...';
-        button.disabled = true;
-        this.sendDataToIframe({ type: 'LOADING', message: "正在获取和分析视频数据..." });
-        this.showAnalysisIframe();
-
-        try {
-            // 使用增强的视频分析API
-            const response = await chrome.runtime.sendMessage({
-                type: 'ANALYZE_VIDEO_DATA',
-                videoId: videoId
-            });
-
-            if (response.success) {
-                this.sendDataToIframe({ type: 'ENHANCED_VIDEO_DATA', data: response.data });
-            } else {
-                this.sendDataToIframe({ type: 'ERROR', message: `分析视频数据失败: ${response.error}` });
-            }
-        } catch (error) {
-            this.sendDataToIframe({ type: 'ERROR', message: `通信错误: ${error.message}` });
-        } finally {
-            button.textContent = '分析视频';
-            button.disabled = false;
-        }
-    };
-
-    /**
-     * Analyzes a channel and sends its data to the iframe.
-     * @param {HTMLElement} button - The button that triggered the analysis
-     */
-    async analyzeChannelAndSendToIframe(button) {
-        const channelId = this.getChannelIdFromUrl();
-        if (!channelId) {
-            this.sendDataToIframe({ type: 'ERROR', message: "无法获取频道ID。" });
-            this.showAnalysisIframe();
-            return;
-        }
-
-        button.textContent = '分析中...';
-        button.disabled = true;
-        this.sendDataToIframe({ type: 'LOADING', message: "正在获取和分析频道数据..." });
-        this.showAnalysisIframe();
-
-        try {
-            // 使用增强的频道分析API
-            const response = await chrome.runtime.sendMessage({
-                type: 'ANALYZE_CHANNEL_DATA',
-                channelId: channelId
-            });
-
-            if (response.success) {
-                this.sendDataToIframe({ type: 'ENHANCED_CHANNEL_DATA', data: response.data });
-            } else {
-                this.sendDataToIframe({ type: 'ERROR', message: `分析频道数据失败: ${response.error}` });
-            }
-        } catch (error) {
-            this.sendDataToIframe({ type: 'ERROR', message: `通信错误: ${error.message}` });
-        } finally {
-            button.textContent = '分析频道';
-            button.disabled = false;
-        }
-    };
-
-    /**
-     * Sends data to the iframe via postMessage.
-     * @param {object} data - The data object to send
-     */
-    sendDataToIframe(data) {
-        // !!! ULTIMATE DEFENSE AGAINST "Extension context invalidated" !!!
-        // Wrap the entire function body in a try-catch as the ultimate safeguard.
-        try {
-            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id || !this.analysisIframe || !this.analysisIframe.contentWindow) {
-                console.warn("Content Script: Cannot send data. Extension or iframe context is invalid.");
-                return;
-            }
-            const iframeOrigin = chrome.runtime.getURL('');
-            this.analysisIframe.contentWindow.postMessage(data, iframeOrigin);
-            console.log("Content Script: Data sent to iframe:", data);
-        } catch (e) {
-            console.error("Content Script: Error sending data to iframe (likely context invalidation):", e);
-        }
-    };
-}
-
-// Instantiate ContentScriptManager to start listening and injecting
-new ContentScriptManager();
+        // Disconnect
