@@ -41,15 +41,13 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "popup/popup.html", 
-        "popup/popup.css", 
-        "popup/analysis_panel.html", 
+        "popup/analysis_panel.html",
         "popup/analysis_panel.css",
+        "popup/analysis_panel.js",
         "libs/api-client.js",
         "libs/data-processor.js",
         "libs/chart-utils.js",
-        "libs/context-utils.js",
-        "popup/analysis_panel.js"
+        "libs/context-utils.js"
       ],
       "matches": ["*://*.youtube.com/*"]
     }
